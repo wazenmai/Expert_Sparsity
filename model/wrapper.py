@@ -40,6 +40,10 @@ class PrunableMixtralSparseMoeBlockWrapper(torch.nn.Module):
         batch_size, sequence_length, hidden_dim = hidden_states.shape
         hidden_states = hidden_states.view(-1, hidden_dim)
         # router_logits: (batch * sequence_length, n_experts)
+        # print model parameter device and hidden states device
+        # print("model gate weight, gate weight shape {} on {}, hidden states shape {} on {}".format(
+            # self.model.gate.weight.shape, self.model.gate.weight.device, hidden_states.shape, hidden_states.device))
+        # hidden_states = hidden_states.to(self.model.gate.weight.device)
         router_logits = self.model.gate(hidden_states)
 
         if self.experts_to_drop is not None:
@@ -80,7 +84,7 @@ class PrunableMixtralSparseMoeBlockWrapper(torch.nn.Module):
             current_state = hidden_states[None,
                                           top_x_list].reshape(-1, hidden_dim)
             current_hidden_states = expert_layer(
-                current_state, routing_weights[top_x_list, idx_list, None])
+                current_state * routing_weights[top_x_list, idx_list, None])
 
             # However `index_add_` only support torch tensors for indexing so we'll use
             # the `top_x` tensor here.
@@ -123,6 +127,7 @@ class PrunableMixtralSparseMoeBlockWrapper(torch.nn.Module):
                 loss_history[dropped] = loss
 
         self.experts_to_drop = min(loss_history, key=loss_history.get)
+        print(f'Experts to drop: {self.experts_to_drop}')
         return loss_history
 
     @torch.no_grad()
@@ -135,6 +140,8 @@ class PrunableMixtralSparseMoeBlockWrapper(torch.nn.Module):
 
         experts_to_reserve = sorted(
             set(range(self.model.num_experts)) - set(self.experts_to_drop))
+        print("experts_to_reserve: ", experts_to_reserve)
+        print("experts_to_drop: ", self.experts_to_drop)
 
         gate_new = torch.nn.Linear(in_features=self.model.gate.in_features,
                                    out_features=self.r, bias=False, device='cpu', dtype=torch.bfloat16)

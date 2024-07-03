@@ -12,6 +12,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, set_seed
 
 from method import METHODS
 from data import DATASETS, build_calib_loader
+from eval.lm_eval import evaluate_fewshot
 
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,7 @@ def parse_args():
 
 
 def main(args: Namespace):
+    print("GPUs: ", torch.cuda.device_count())
     logger.info(f'Arguments: {args}')
 
     if args.model_path.endswith('/'):
@@ -79,11 +81,37 @@ def main(args: Namespace):
     calib_loader = build_calib_loader(args.calib_set, tokenizer, args.max_block_size,
                                       args.n_blocks_for_stat, args.batch_size, args.num_workers, args.seed)
 
-    model, info = METHODS[args.method](model, calib_loader, args)
+    layer = model.model.layers[31].block_sparse_moe
 
-    model.save_pretrained(save_path)
-    tokenizer.save_pretrained(save_path)
-    torch.save((args, info), osp.join(save_path, 'pruning_info.pt'))
+    experts_to_reserve = [0, 1, 2, 3, 5, 7]
+    gate_new = torch.nn.Linear(in_features=layer.gate.in_features,
+                                out_features=args.r, bias=False, device='cpu', dtype=torch.bfloat16)
+    gate_new.weight.data = layer.gate.weight.data[list(
+        experts_to_reserve)]
+    layer.gate = gate_new
+
+    layer.experts = torch.nn.ModuleList(
+        [layer.experts[i] for i in experts_to_reserve])
+    layer.num_experts = args.r
+
+    print(model.model.layers[31].block_sparse_moe)
+
+    # model, info = METHODS[args.method](model, calib_loader, args)
+
+    # model.save_pretrained(save_path)
+    # tokenizer.save_pretrained(save_path)
+    # torch.save((args, info), osp.join(save_path, 'pruning_info.pt'))
+
+    # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    # model.to(device)
+    # task = ["winogrande", "arc_challenge", "arc_easy", "boolq", "hellaswag", "mmlu", "openbookqa", "rte"]
+    # eval_batch_size = [32, 32, 32, 32, 32, 32, 32, 32]
+    task = ["openbookqa", "rte"]
+    eval_batch_size = [64, 64]
+    for i, t in enumerate(task):
+        evaluate_fewshot(
+            model, tokenizer=tokenizer, task=t, num_fewshot=0, eval_batch_size=eval_batch_size[i], log=True
+        )
 
 
 if __name__ == '__main__':
