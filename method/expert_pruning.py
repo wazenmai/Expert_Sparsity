@@ -62,6 +62,7 @@ def layerwise_pruning(model: MixtralForCausalLM, calib_loader: DataLoader, args:
             b.to('cuda:0')
         else:
             b.to('cuda:1')
+        # print("model device {}".format(b.model.gate.weight.data.device))
         loss_history = b.enumerate()
         global_loss_history[l] = loss_history
         b.prune()

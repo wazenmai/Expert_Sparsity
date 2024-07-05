@@ -164,4 +164,5 @@ cython_debug/
 
 log*
 *_log
+*run.sh
 

@@ -81,11 +81,17 @@ def main(args: Namespace):
     calib_loader = build_calib_loader(args.calib_set, tokenizer, args.max_block_size,
                                       args.n_blocks_for_stat, args.batch_size, args.num_workers, args.seed)
 
+
     model, info = METHODS[args.method](model, calib_loader, args)
 
     model.save_pretrained(save_path)
     tokenizer.save_pretrained(save_path)
     torch.save((args, info), osp.join(save_path, 'pruning_info.pt'))
+
+    # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    # model.to(device)
+    # task = ["winogrande", "arc_challenge", "arc_easy", "boolq", "hellaswag", "mmlu", "openbookqa", "rte"]
+    # eval_batch_size = [32, 32, 32, 32, 32, 32, 32, 32]
 
     # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     # model.to(device)
