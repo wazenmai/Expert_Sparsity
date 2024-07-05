@@ -13,8 +13,8 @@ logger = logging.getLogger(__name__)
 
 
 def layerwise_pruning(model: MixtralForCausalLM, calib_loader: DataLoader, args: Namespace):
-    assert isinstance(
-        model, MixtralForCausalLM), 'Currently only `Mixtral` is supported'
+    # assert isinstance(
+    #     model, MixtralForCausalLM), 'Currently only `Mixtral` is supported'
 
     for l, layer in enumerate(model.model.layers):
         layer.block_sparse_moe = PrunableMixtralSparseMoeBlockWrapper(
@@ -24,9 +24,7 @@ def layerwise_pruning(model: MixtralForCausalLM, calib_loader: DataLoader, args:
 
     with torch.inference_mode():
         for i, batch in enumerate(tqdm(calib_loader, desc='Model forwarding on sample set...')):
-            for k, v in batch.items():
-                if isinstance(v, torch.Tensor):
-                    batch[k] = v.to('cuda')
+            batch = {k: v.to('cuda') for k, v in batch.items()}
             model_inputs = model.prepare_inputs_for_generation(**batch)
             outputs = model(**model_inputs)
             assert outputs is not None
@@ -41,11 +39,29 @@ def layerwise_pruning(model: MixtralForCausalLM, calib_loader: DataLoader, args:
         b = layer.block_sparse_moe
         if not hasattr(b, 'cache_space'):
             continue
-        # if l < 16:
+        ## For mixtral
+        # if l < 4:
         #     b.to('cuda:0')
-        # else:
+        # elif l < 9:
         #     b.to('cuda:1')
-        b.to('cuda:0')
+        # elif l < 14:
+        #     b.to('cuda:2')
+        # elif l < 19:
+        #     b.to('cuda:3')
+        # elif l < 24:
+        #     b.to('cuda:4')
+        # elif l < 29:
+        #     b.to('cuda:5')
+        # else:
+        #     b.to('cuda:6')
+
+        # For tinyLLama
+        # b.to('cuda:0')
+        
+        if l < 16:
+            b.to('cuda:0')
+        else:
+            b.to('cuda:1')
         loss_history = b.enumerate()
         global_loss_history[l] = loss_history
         b.prune()

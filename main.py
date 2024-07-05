@@ -49,6 +49,7 @@ def parse_args():
 
 
 def main(args: Namespace):
+    print("GPUs: ", torch.cuda.device_count())
     logger.info(f'Arguments: {args}')
 
     if args.model_path.endswith('/'):
@@ -86,12 +87,16 @@ def main(args: Namespace):
     tokenizer.save_pretrained(save_path)
     torch.save((args, info), osp.join(save_path, 'pruning_info.pt'))
 
-    model.to('cuda')
-    task = ["winogrande", "arc_challenge", "arc_easy", "boolq", "hellaswag", "mmlu", "openbookqa", "rte"]
-    for t in task:
-        evaluate_fewshot(
-            model, tokenizer=tokenizer, task=t, num_fewshot=0, eval_batch_size=16, log=True
-        )
+    # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    # model.to(device)
+    # task = ["winogrande", "arc_challenge", "arc_easy", "boolq", "hellaswag", "mmlu", "openbookqa", "rte"]
+    # eval_batch_size = [32, 32, 32, 32, 32, 32, 32, 32]
+
+    # task = ["winogrande", "arc_challenge", "arc_easy", "boolq", "hellaswag", "mmlu", "openbookqa", "rte"]
+    # for t in task:
+    #     evaluate_fewshot(
+    #         model, tokenizer=tokenizer, task=t, num_fewshot=0, eval_batch_size=16, log=True
+    #     )
 
 
 if __name__ == '__main__':
