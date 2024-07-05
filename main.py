@@ -12,6 +12,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, set_seed
 
 from method import METHODS
 from data import DATASETS, build_calib_loader
+from eval.lm_eval import evaluate_fewshot
 
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,13 @@ def main(args: Namespace):
     model.save_pretrained(save_path)
     tokenizer.save_pretrained(save_path)
     torch.save((args, info), osp.join(save_path, 'pruning_info.pt'))
+
+    model.to('cuda')
+    task = ["winogrande", "arc_challenge", "arc_easy", "boolq", "hellaswag", "mmlu", "openbookqa", "rte"]
+    for t in task:
+        evaluate_fewshot(
+            model, tokenizer=tokenizer, task=t, num_fewshot=0, eval_batch_size=16, log=True
+        )
 
 
 if __name__ == '__main__':
