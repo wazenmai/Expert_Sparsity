@@ -166,3 +166,5 @@ log*
 *_log
 *run.sh
 
+lm-evluation-harness/
+transformers/
