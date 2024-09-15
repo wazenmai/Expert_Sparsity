@@ -1,6 +1,7 @@
 import itertools as I
 import logging
 from typing import Optional
+import random
 
 import torch
 import torch.nn as nn
@@ -9,12 +10,132 @@ import torch.nn.functional as F
 from transformers.models.mixtral.modeling_mixtral import (
     MixtralForCausalLM,
     MixtralSparseMoeBlock,
-    MixtralBLockSparseTop2MLP)
+    MixtralBLockSparseTop2MLP
+)
+
+from transformers.models.qwen2_moe.modeling_qwen2_moe import Qwen2MoeSparseMoeBlock
 
 from data import CacheDataset
 
 
 logger = logging.getLogger(__name__)
+
+class PrunableQwenSparseMoeBlockWrapper(torch.nn.Module):
+    def __init__(self, model, r: Optional[int] = None):
+        super().__init__()
+        if isinstance(model, Qwen2MoeSparseMoeBlock):
+            self.model = model
+        else:
+            self.model = model.model
+        self.r = r
+
+        self.experts_to_drop = None
+        self.cache_space = CacheDataset()
+        self.cache_logits = False
+        self.cache_X = False
+        self.cache_Z = False
+    
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        batch_size, sequence_length, hidden_dim = hidden_states.shape
+        hidden_states = hidden_states.view(-1, hidden_dim)
+        # router_logits: (batch * sequence_length, n_experts)
+        router_logits = self.model.gate(hidden_states)
+
+        if self.experts_to_drop is not None:
+            for e in self.experts_to_drop:
+                router_logits[:, e] = -float('inf')
+
+        routing_weights = F.softmax(router_logits, dim=1, dtype=torch.float)
+        routing_weights, selected_experts = torch.topk(routing_weights, self.top_k, dim=-1)
+        if self.norm_topk_prob:
+            routing_weights /= routing_weights.sum(dim=-1, keepdim=True)
+        # we cast back to the input dtype
+        routing_weights = routing_weights.to(hidden_states.dtype)
+
+        final_hidden_states = torch.zeros(
+            (batch_size * sequence_length, hidden_dim), dtype=hidden_states.dtype, device=hidden_states.device
+        )
+
+        # One hot encode the selected experts to create an expert mask
+        # this will be used to easily index which expert is going to be sollicitated
+        expert_mask = torch.nn.functional.one_hot(selected_experts, num_classes=self.num_experts).permute(2, 1, 0)
+
+        # Loop over all available experts in the model and perform the computation on each expert
+        for expert_idx in range(self.num_experts):
+            expert_layer = self.model.experts[expert_idx]
+            idx, top_x = torch.where(expert_mask[expert_idx])
+
+            # Index the correct hidden states and compute the expert hidden state for
+            # the current expert. We need to make sure to multiply the output hidden
+            # states by `routing_weights` on the corresponding tokens (top-1 and top-2)
+            current_state = hidden_states[None, top_x].reshape(-1, hidden_dim)
+            current_hidden_states = expert_layer(current_state) * routing_weights[top_x, idx, None]
+
+            # However `index_add_` only support torch tensors for indexing so we'll use
+            # the `top_x` tensor here.
+            final_hidden_states.index_add_(0, top_x, current_hidden_states.to(hidden_states.dtype))
+
+        shared_expert_output = self.model.shared_expert(hidden_states)
+        shared_expert_output = F.sigmoid(self.model.shared_expert_gate(hidden_states)) * shared_expert_output
+
+        final_hidden_states = final_hidden_states + shared_expert_output
+
+        final_hidden_states = final_hidden_states.reshape(batch_size, sequence_length, hidden_dim)
+        return final_hidden_states, router_logits
+
+    @torch.no_grad()
+    def enumerate(self):
+        self.cache_logits = False
+        self.cache_X = False
+        self.cache_Z = False
+        loss_history = dict()
+
+        with torch.inference_mode():
+            for _ in range(100):
+                temp = range(self.model.num_experts)
+                random.shuffle(temp)
+                dropped = tuple(list(temp)[:self.r])
+                self.experts_to_drop = dropped
+                loss = 0
+
+                for (hidden_states, final_hidden_states) in zip(self.cache_space.Xs, self.cache_space.Zs):
+                    hidden_states = hidden_states.to(
+                        device=self.model.gate.weight.data.device, non_blocking=True)
+                    final_hidden_states = final_hidden_states.to(
+                        dtype=torch.float64, device=self.model.gate.weight.data.device, non_blocking=True)
+
+                    final_hidden_states_e, _ = self.forward(
+                        hidden_states.unsqueeze(0))
+                    loss += torch.norm(final_hidden_states -
+                                       final_hidden_states_e.squeeze(0).to(torch.float64)).item()
+                loss_history[dropped] = loss
+
+        self.experts_to_drop = min(loss_history, key=loss_history.get)
+        return loss_history
+
+    @torch.no_grad()
+    def prune(self):
+        assert self.experts_to_drop is not None
+        assert len(self.experts_to_drop) == self.model.num_experts - self.r
+        del self.cache_space
+        self.cache_X = False
+        self.cache_Z = False
+
+        experts_to_reserve = sorted(
+            set(range(self.model.num_experts)) - set(self.experts_to_drop))
+        print("experts_to_reserve: ", experts_to_reserve)
+        print("experts_to_drop: ", self.experts_to_drop)
+
+        gate_new = torch.nn.Linear(in_features=self.model.gate.in_features,
+                                   out_features=self.r, bias=False, device='cpu', dtype=torch.bfloat16)
+        gate_new.weight.data = self.model.gate.weight.data[list(
+            experts_to_reserve)]
+        self.model.gate = gate_new
+
+        self.model.experts = torch.nn.ModuleList(
+            [self.model.experts[i] for i in experts_to_reserve])
+        self.model.num_experts = self.r  
+
 
 
 class PrunableMixtralSparseMoeBlockWrapper(torch.nn.Module):
@@ -127,7 +248,6 @@ class PrunableMixtralSparseMoeBlockWrapper(torch.nn.Module):
                 loss_history[dropped] = loss
 
         self.experts_to_drop = min(loss_history, key=loss_history.get)
-        print(f'Experts to drop: {self.experts_to_drop}')
         return loss_history
 
     @torch.no_grad()

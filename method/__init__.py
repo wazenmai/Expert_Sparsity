@@ -6,4 +6,5 @@ METHODS = {
     'layerwise_pruning': expert_pruning.layerwise_pruning,
     'progressive_pruning': expert_pruning.progressive_pruning,
     'dynamic_skipping': dynamic_skipping.dynamic_skipping,
+    'layerwise_pruning_qwen': expert_pruning.layerwise_pruning_qwen,
 }
