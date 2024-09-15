@@ -67,7 +67,6 @@ def main(args: Namespace):
             args.output_path, f'{model_name}_{args.method}_{args.calib_set}_{args.n_blocks_for_stat}_{"fatt2_" if args.use_flash_attention_2 else ""}{datetime.now().strftime("%Y%m%d-%H%M%S")}')
 
     logger.info(f'Save path: {save_path}')
-    os.makedirs(save_path, exist_ok=False)
     set_seed(args.seed)
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)
@@ -80,7 +79,9 @@ def main(args: Namespace):
 
     calib_loader = build_calib_loader(args.calib_set, tokenizer, args.max_block_size,
                                       args.n_blocks_for_stat, args.batch_size, args.num_workers, args.seed)
-
+    
+    """
+    # Last Layer Experiment
     layer = model.model.layers[31].block_sparse_moe
 
     experts_to_reserve = [0, 1, 2, 3, 5, 7]
@@ -95,23 +96,31 @@ def main(args: Namespace):
     layer.num_experts = args.r
 
     print(model.model.layers[31].block_sparse_moe)
+    """
 
-    # model, info = METHODS[args.method](model, calib_loader, args)
+    model, info = METHODS[args.method](model, calib_loader, args)
+    if args.r < model.config.num_experts_per_tok:
+        for layer in model.model.layers:
+            moe = layer.block_sparse_moe
+            layer.top_k = args.r
+            print(layer.top_k)
 
-    # model.save_pretrained(save_path)
-    # tokenizer.save_pretrained(save_path)
-    # torch.save((args, info), osp.join(save_path, 'pruning_info.pt'))
+    os.makedirs(save_path, exist_ok=False)
+    model.save_pretrained(save_path)
+    tokenizer.save_pretrained(save_path)
+    torch.save((args, info), osp.join(save_path, 'pruning_info.pt'))
+
 
     # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     # model.to(device)
     # task = ["winogrande", "arc_challenge", "arc_easy", "boolq", "hellaswag", "mmlu", "openbookqa", "rte"]
     # eval_batch_size = [32, 32, 32, 32, 32, 32, 32, 32]
-    task = ["openbookqa", "rte"]
-    eval_batch_size = [64, 64]
-    for i, t in enumerate(task):
-        evaluate_fewshot(
-            model, tokenizer=tokenizer, task=t, num_fewshot=0, eval_batch_size=eval_batch_size[i], log=True
-        )
+    # task = ["openbookqa", "rte"]
+    # eval_batch_size = [64, 64]
+    # for i, t in enumerate(task):
+    #     evaluate_fewshot(
+    #         model, tokenizer=tokenizer, task=t, num_fewshot=0, eval_batch_size=eval_batch_size[i], log=True
+    #     )
 
 
 if __name__ == '__main__':
