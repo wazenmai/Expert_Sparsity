@@ -46,8 +46,8 @@ class PrunableQwenSparseMoeBlockWrapper(torch.nn.Module):
                 router_logits[:, e] = -float('inf')
 
         routing_weights = F.softmax(router_logits, dim=1, dtype=torch.float)
-        routing_weights, selected_experts = torch.topk(routing_weights, self.top_k, dim=-1)
-        if self.norm_topk_prob:
+        routing_weights, selected_experts = torch.topk(routing_weights, self.model.top_k, dim=-1)
+        if self.model.norm_topk_prob:
             routing_weights /= routing_weights.sum(dim=-1, keepdim=True)
         # we cast back to the input dtype
         routing_weights = routing_weights.to(hidden_states.dtype)
@@ -58,10 +58,10 @@ class PrunableQwenSparseMoeBlockWrapper(torch.nn.Module):
 
         # One hot encode the selected experts to create an expert mask
         # this will be used to easily index which expert is going to be sollicitated
-        expert_mask = torch.nn.functional.one_hot(selected_experts, num_classes=self.num_experts).permute(2, 1, 0)
+        expert_mask = torch.nn.functional.one_hot(selected_experts, num_classes=self.model.num_experts).permute(2, 1, 0)
 
         # Loop over all available experts in the model and perform the computation on each expert
-        for expert_idx in range(self.num_experts):
+        for expert_idx in range(self.model.num_experts):
             expert_layer = self.model.experts[expert_idx]
             idx, top_x = torch.where(expert_mask[expert_idx])
 
@@ -91,10 +91,10 @@ class PrunableQwenSparseMoeBlockWrapper(torch.nn.Module):
         loss_history = dict()
 
         with torch.inference_mode():
-            for _ in range(100):
-                temp = range(self.model.num_experts)
+            for _ in range(100000):
+                temp = list(range(self.model.num_experts))
                 random.shuffle(temp)
-                dropped = tuple(list(temp)[:self.r])
+                dropped = tuple(list(temp)[:self.model.num_experts - self.r])
                 self.experts_to_drop = dropped
                 loss = 0
 
@@ -128,8 +128,7 @@ class PrunableQwenSparseMoeBlockWrapper(torch.nn.Module):
 
         gate_new = torch.nn.Linear(in_features=self.model.gate.in_features,
                                    out_features=self.r, bias=False, device='cpu', dtype=torch.bfloat16)
-        gate_new.weight.data = self.model.gate.weight.data[list(
-            experts_to_reserve)]
+        gate_new.weight.data = self.model.gate.weight.data[list(experts_to_reserve)]
         self.model.gate = gate_new
 
         self.model.experts = torch.nn.ModuleList(

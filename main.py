@@ -62,7 +62,7 @@ def main(args: Namespace):
             args.output_path, f'{model_name}_{args.method}_r{args.r}_{args.calib_set}_{args.n_blocks_for_stat}_{"fatt2_" if args.use_flash_attention_2 else ""}{datetime.now().strftime("%Y%m%d-%H%M%S")}')
     else:
         if args.r is not None:
-            logger.warn(f'Not using pruning methods, argument `r` is not used')
+            logger.warning(f'Not using pruning methods, argument `r` is not used')
         save_path = osp.join(
             args.output_path, f'{model_name}_{args.method}_{args.calib_set}_{args.n_blocks_for_stat}_{"fatt2_" if args.use_flash_attention_2 else ""}{datetime.now().strftime("%Y%m%d-%H%M%S")}')
 

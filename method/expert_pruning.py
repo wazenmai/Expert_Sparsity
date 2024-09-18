@@ -34,7 +34,7 @@ def layerwise_pruning_qwen(model: Qwen2MoeForCausalLM, calib_loader: DataLoader,
     global_loss_history = dict()
     for l, layer in tqdm(list(enumerate(model.model.layers)), desc='Enumerating loss on sample set...'):
         print("layer ", l)
-        b = layer.block_sparse_moe
+        b = layer.mlp
         if not hasattr(b, 'cache_space'):
             continue
         
@@ -55,7 +55,7 @@ def layerwise_pruning_qwen(model: Qwen2MoeForCausalLM, calib_loader: DataLoader,
 
     logger.info('Merging & saving...')
     for l, layer in enumerate(model.model.layers):
-        layer.block_sparse_moe = layer.block_sparse_moe.model
+        layer.mlp = layer.mlp.model
 
     model.num_experts = args.r
     model.config.num_experts = args.r

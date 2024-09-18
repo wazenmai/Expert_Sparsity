@@ -1,1 +1,1 @@
-from .wrapper import PrunableMixtralSparseMoeBlockWrapper, DynamicSkippingMixtralSparseMoeBlockWrapper
+from .wrapper import PrunableMixtralSparseMoeBlockWrapper, DynamicSkippingMixtralSparseMoeBlockWrapper, PrunableQwenSparseMoeBlockWrapper
