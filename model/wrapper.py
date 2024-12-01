@@ -2,6 +2,7 @@ import itertools as I
 import logging
 from typing import Optional
 import random
+import sys
 
 import torch
 import torch.nn as nn
@@ -81,6 +82,10 @@ class PrunableQwenSparseMoeBlockWrapper(torch.nn.Module):
         final_hidden_states = final_hidden_states + shared_expert_output
 
         final_hidden_states = final_hidden_states.reshape(batch_size, sequence_length, hidden_dim)
+
+        self.cache_space.append(alpha=(router_logits if self.cache_logits else None), X=(hidden_states if self.cache_X else None), Z=(
+            final_hidden_states if self.cache_Z else None))
+        
         return final_hidden_states, router_logits
 
     @torch.no_grad()
@@ -91,7 +96,7 @@ class PrunableQwenSparseMoeBlockWrapper(torch.nn.Module):
         loss_history = dict()
 
         with torch.inference_mode():
-            for _ in range(100000):
+            for i in range(10):
                 temp = list(range(self.model.num_experts))
                 random.shuffle(temp)
                 dropped = tuple(list(temp)[:self.model.num_experts - self.r])
@@ -106,11 +111,15 @@ class PrunableQwenSparseMoeBlockWrapper(torch.nn.Module):
 
                     final_hidden_states_e, _ = self.forward(
                         hidden_states.unsqueeze(0))
-                    loss += torch.norm(final_hidden_states -
-                                       final_hidden_states_e.squeeze(0).to(torch.float64)).item()
+                    # print(hidden_states.shape, hidden_states.unsqueeze(0).shape)
+                    # print(final_hidden_states_e.shape, final_hidden_states.shape)
+                    loss += torch.norm(final_hidden_states.view(final_hidden_states_e.shape) -
+                                       final_hidden_states_e.to(torch.float64)).item()
                 loss_history[dropped] = loss
+                print(i, loss)
 
         self.experts_to_drop = min(loss_history, key=loss_history.get)
+        print("experts_to_drop: ", self.experts_to_drop)
         return loss_history
 
     @torch.no_grad()

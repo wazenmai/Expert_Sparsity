@@ -14,6 +14,10 @@ logger = logging.getLogger(__name__)
 
 
 def layerwise_pruning_qwen(model: Qwen2MoeForCausalLM, calib_loader: DataLoader, args: Namespace):
+    original_devices = {}
+    for l, layer in enumerate(model.model.layers):
+        original_devices[l] = next(layer.mlp.parameters()).device
+
     for l, layer in enumerate(model.model.layers):
         layer.mlp = PrunableQwenSparseMoeBlockWrapper(
             layer.mlp, r=args.r)
