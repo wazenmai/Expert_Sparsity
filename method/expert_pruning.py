@@ -32,7 +32,9 @@ def layerwise_pruning_qwen(model: Qwen2MoeForCausalLM, calib_loader: DataLoader,
             assert outputs is not None
 
     logger.info('Moving whole model to cpu...')
-    model.to('cpu')
+    # model.to('cpu')
+    for l, layer in enumerate(model.model.layers):
+        layer = layer.to('cpu')
     torch.cuda.empty_cache()
 
     global_loss_history = dict()
@@ -41,16 +43,7 @@ def layerwise_pruning_qwen(model: Qwen2MoeForCausalLM, calib_loader: DataLoader,
         b = layer.mlp
         if not hasattr(b, 'cache_space'):
             continue
-        
-        if l < 6:
-            b.to('cuda:0')
-        elif l < 12:
-            b.to('cuda:1')
-        elif l < 18:
-            b.to('cuda:2')
-        else:
-            b.to('cuda:3')
-
+        b.to(original_devices[l])
         print("model device {}".format(b.model.gate.weight.data.device))
         loss_history = b.enumerate()
         global_loss_history[l] = loss_history
@@ -60,6 +53,7 @@ def layerwise_pruning_qwen(model: Qwen2MoeForCausalLM, calib_loader: DataLoader,
     logger.info('Merging & saving...')
     for l, layer in enumerate(model.model.layers):
         layer.mlp = layer.mlp.model
+        layer = layer.to(original_devices[l])
 
     model.num_experts = args.r
     model.config.num_experts = args.r

@@ -13,6 +13,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, set_seed
 from method import METHODS
 from data import DATASETS, build_calib_loader
 from eval.lm_eval import evaluate_fewshot
+import time
 
 
 logger = logging.getLogger(__name__)
@@ -80,8 +81,22 @@ def main(args: Namespace):
     calib_loader = build_calib_loader(args.calib_set, tokenizer, args.max_block_size,
                                       args.n_blocks_for_stat, args.batch_size, args.num_workers, args.seed)
 
+    st = time.time()
 
     model, info = METHODS[args.method](model, calib_loader, args)
+
+    print(f"[O-prune] Pruning time: {time.time() - st:2f} seconds")
+    if torch.cuda.is_available():
+        peak_memory_usage = 0
+        overall_memory_usage = 0
+        for device_id in range(torch.cuda.device_count()):
+            device_memory = torch.cuda.max_memory_allocated(device_id) / (1024 ** 3)  # Convert to MB
+            print(f"{device_id}: {device_memory} GB")
+            peak_memory_usage = max(peak_memory_usage, device_memory)
+            overall_memory_usage += device_memory
+    else:
+        peak_memory_usage = None  # No GPU available
+    print(f"[O-prune] Peak memory usage: {peak_memory_usage} GB, Overall memory usage: {overall_memory_usage} GB")
 
     model.save_pretrained(save_path)
     tokenizer.save_pretrained(save_path)
@@ -102,6 +117,9 @@ def main(args: Namespace):
     #     evaluate_fewshot(
     #         model, tokenizer=tokenizer, task=t, num_fewshot=0, eval_batch_size=eval_batch_size[i], log=True
     #     )
+    evaluate_fewshot(
+        model, tokenizer=tokenizer, task="gsm8k", num_fewshot=5, eval_batch_size=16, log=True
+    )
 
 
 if __name__ == '__main__':

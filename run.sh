@@ -19,6 +19,6 @@ OUTPUT_PATH=/home/u2139934/Warehouse/models/prune_baseline/Qwen1.5-MoE-A2.7B-Cha
 # -m 
 # python3 main.py --method layerwise_pruning --r 1 --calib_set c4 --n_blocks_for_stat 32 --model_path $MODEL_PATH --output_path $OUTPUT_PATH |& tee log_tinyllama_r1_n32
 python3 main.py --method qwen_layerwise_pruning --r 45 --calib_set c4 --n_blocks_for_stat 32 --model_path $MODEL_PATH --output_path $OUTPUT_PATH |& tee log_qwen_r45_10
-lm_eval --model hf \
-    --model_args pretrained=$OUTPUT_PATH,dtype=bfloat16,parallelize=True \
-    --tasks gsm8k --batch_size 8 |& tee log_result_qwen_45
+# lm_eval --model hf \
+#     --model_args pretrained=$OUTPUT_PATH,dtype=bfloat16,parallelize=True \
+#     --tasks gsm8k --batch_size 8 |& tee log_result_qwen_45
