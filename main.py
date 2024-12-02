@@ -57,7 +57,9 @@ def main(args: Namespace):
         args.model_path = args.model_path[:-1]
     model_name = args.model_path.split('/')[-1]
 
-    if args.method.endswith('_pruning'):
+    if args.output_path != "./output":
+        save_path = args.output_path
+    elif args.method.endswith('_pruning'):
         assert args.r is not None, 'Using pruning methods, argument `r` is required'
         save_path = osp.join(
             args.output_path, f'{model_name}_{args.method}_r{args.r}_{args.calib_set}_{args.n_blocks_for_stat}_{"fatt2_" if args.use_flash_attention_2 else ""}{datetime.now().strftime("%Y%m%d-%H%M%S")}')
@@ -81,6 +83,7 @@ def main(args: Namespace):
     calib_loader = build_calib_loader(args.calib_set, tokenizer, args.max_block_size,
                                       args.n_blocks_for_stat, args.batch_size, args.num_workers, args.seed)
 
+    print("Number of parameters before pruning:", model.num_parameters())
     st = time.time()
 
     model, info = METHODS[args.method](model, calib_loader, args)
@@ -97,6 +100,7 @@ def main(args: Namespace):
     else:
         peak_memory_usage = None  # No GPU available
     print(f"[O-prune] Peak memory usage: {peak_memory_usage} GB, Overall memory usage: {overall_memory_usage} GB")
+    print(f"[O-prune] Number of parameters after pruning: {model.num_parameters()}")
 
     model.save_pretrained(save_path)
     tokenizer.save_pretrained(save_path)
@@ -117,9 +121,9 @@ def main(args: Namespace):
     #     evaluate_fewshot(
     #         model, tokenizer=tokenizer, task=t, num_fewshot=0, eval_batch_size=eval_batch_size[i], log=True
     #     )
-    evaluate_fewshot(
-        model, tokenizer=tokenizer, task="gsm8k", num_fewshot=5, eval_batch_size=16, log=True
-    )
+    # evaluate_fewshot(
+    #     model, tokenizer=tokenizer, task="gsm8k", num_fewshot=5, eval_batch_size=16, log=True
+    # )
 
 
 if __name__ == '__main__':

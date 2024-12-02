@@ -62,9 +62,10 @@ def layerwise_pruning_qwen(model: Qwen2MoeForCausalLM, calib_loader: DataLoader,
 
 
 def layerwise_pruning(model: MixtralForCausalLM, calib_loader: DataLoader, args: Namespace):
-    # assert isinstance(
-    #     model, MixtralForCausalLM), 'Currently only `Mixtral` is supported'
-
+    original_devices = {}
+    for l, layer in enumerate(model.model.layers):
+        original_devices[l] = next(layer.block_sparse_moe.parameters()).device
+    
     for l, layer in enumerate(model.model.layers):
         layer.block_sparse_moe = PrunableMixtralSparseMoeBlockWrapper(
             layer.block_sparse_moe, r=args.r)
@@ -80,6 +81,8 @@ def layerwise_pruning(model: MixtralForCausalLM, calib_loader: DataLoader, args:
 
     logger.info('Moving whole model to cpu...')
     model.to('cpu')
+    # for l, layer in enumerate(model.model.layers):
+    #     layer = layer.to('cpu')
     torch.cuda.empty_cache()
 
     global_loss_history = dict()
@@ -88,26 +91,7 @@ def layerwise_pruning(model: MixtralForCausalLM, calib_loader: DataLoader, args:
         b = layer.block_sparse_moe
         if not hasattr(b, 'cache_space'):
             continue
-        ### Mixtral 8x7B in 8 32GB GPUs
-        # if l < 4:
-        #     b.to('cuda:0')
-        # elif l < 9:
-        #     b.to('cuda:1')
-        # elif l < 14:
-        #     b.to('cuda:2')
-        # elif l < 19:
-        #     b.to('cuda:3')
-        # elif l < 24:
-        #     b.to('cuda:4')
-        # elif l < 29:
-        #     b.to('cuda:5')
-        # else:
-        #     b.to('cuda:6')
-
-        ### TinyLLaMa in 1 GPU
-        b.to('cuda')
-
-        # print("model device {}".format(b.model.gate.weight.data.device))
+        b.to(original_devices[l])
         loss_history = b.enumerate()
         global_loss_history[l] = loss_history
         b.prune()
@@ -116,6 +100,7 @@ def layerwise_pruning(model: MixtralForCausalLM, calib_loader: DataLoader, args:
     logger.info('Merging & saving...')
     for l, layer in enumerate(model.model.layers):
         layer.block_sparse_moe = layer.block_sparse_moe.model
+        # layer = layer.to(original_devices[l])
 
     model.num_experts = args.r
     model.config.num_local_experts = args.r

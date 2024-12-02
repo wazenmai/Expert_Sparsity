@@ -96,7 +96,7 @@ class PrunableQwenSparseMoeBlockWrapper(torch.nn.Module):
         loss_history = dict()
 
         with torch.inference_mode():
-            for i in range(2):
+            for i in range(100): # 1e5
                 temp = list(range(self.model.num_experts))
                 random.shuffle(temp)
                 dropped = tuple(list(temp)[:self.model.num_experts - self.r])
